@@ -36,6 +36,7 @@ const (
 
 // Metric descriptors.
 var (
+
 	binlogSizeDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(namespace, binlog, "size_bytes"),
 		"Combined size of all registered binlog files.",

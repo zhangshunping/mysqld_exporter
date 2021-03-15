@@ -83,6 +83,38 @@ type Exporter struct {
 	metrics  Metrics
 }
 
+type ProxyExporter struct {
+	ctx      context.Context
+	logger   log.Logger
+	metrics  Metrics
+}
+
+// Describe implements prometheus.Collector.
+func (e *ProxyExporter) Describe(ch chan<- *prometheus.Desc) {
+	ch <- e.metrics.TotalScrapes.Desc()
+	ch <- e.metrics.Error.Desc()
+	e.metrics.ScrapeErrors.Describe(ch)
+	ch <- e.metrics.MySQLUp.Desc()
+}
+
+// Collect implements prometheus.Collector.
+func (e *ProxyExporter) Collect(ch chan<- prometheus.Metric) {
+	ch <- e.metrics.TotalScrapes
+	ch <- e.metrics.Error
+	e.metrics.ScrapeErrors.Collect(ch)
+	ch <- e.metrics.MySQLUp
+}
+
+
+func NewProxy(ctx context.Context,metrics Metrics, logger log.Logger) *ProxyExporter {
+	return &ProxyExporter{
+		ctx:      ctx,
+		logger:   logger,
+		metrics:  metrics,
+	}
+}
+
+
 // New returns a new MySQL exporter for the provided DSN.
 func New(ctx context.Context, dsn string, metrics Metrics, scrapers []Scraper, logger log.Logger) *Exporter {
 	// Setup extra params for the DSN, default to having a lock timeout.
@@ -133,7 +165,7 @@ func (e *Exporter) scrape(ctx context.Context, ch chan<- prometheus.Metric) {
 	scrapeTime := time.Now()
 	db, err := sql.Open("mysql", e.dsn)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "Error opening connection to database", "err", err)
+		level.Error(e.logger).Log("msg", "Error opening connection to database", "err", err,e.dsn)
 		e.metrics.Error.Set(1)
 		return
 	}
@@ -164,7 +196,6 @@ func (e *Exporter) scrape(ctx context.Context, ch chan<- prometheus.Metric) {
 		if version < scraper.Version() {
 			continue
 		}
-
 		wg.Add(1)
 		go func(scraper Scraper) {
 			defer wg.Done()
@@ -179,6 +210,9 @@ func (e *Exporter) scrape(ctx context.Context, ch chan<- prometheus.Metric) {
 		}(scraper)
 	}
 }
+
+
+
 
 func getMySQLVersion(db *sql.DB, logger log.Logger) float64 {
 	var versionStr string

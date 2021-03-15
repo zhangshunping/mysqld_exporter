@@ -62,6 +62,7 @@ var (
 		"Ignore certificate and server verification when using a tls connection.",
 	).Bool()
 	dsn string
+	handlerFunc http.HandlerFunc
 )
 
 // scrapers lists all possible collection methods and if they should be enabled by default.
@@ -136,6 +137,7 @@ func parseMycnf(config interface{}) (string, error) {
 		dsn = fmt.Sprintf("%s?tls=custom", dsn)
 	}
 
+	fmt.Println(dsn)
 	return dsn, nil
 }
 
@@ -170,7 +172,9 @@ func init() {
 	prometheus.MustRegister(version.NewCollector("mysqld_exporter"))
 }
 
-func newHandler(metrics collector.Metrics, scrapers []collector.Scraper, logger log.Logger) http.HandlerFunc {
+
+
+func newHandler(metrics collector.Metrics, scrapers []collector.Scraper, logger log.Logger,exitdb bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filteredScrapers := scrapers
 		params := r.URL.Query()["collect[]"]
@@ -215,7 +219,13 @@ func newHandler(metrics collector.Metrics, scrapers []collector.Scraper, logger 
 		}
 
 		registry := prometheus.NewRegistry()
-		registry.MustRegister(collector.New(ctx, dsn, metrics, filteredScrapers, logger))
+
+		if exitdb{
+			registry.MustRegister(collector.New(ctx,dsn, metrics, filteredScrapers, logger))
+		}else{
+			registry.MustRegister(collector.NewProxy(ctx, metrics,logger))
+		}
+
 
 		gatherers := prometheus.Gatherers{
 			prometheus.DefaultGatherer,
@@ -226,6 +236,33 @@ func newHandler(metrics collector.Metrics, scrapers []collector.Scraper, logger 
 		h.ServeHTTP(w, r)
 	}
 }
+
+
+func getdns(logger log.Logger ) bool {
+	dsn = os.Getenv("DATA_SOURCE_NAME")
+	if len(dsn) == 0 {
+		var err error
+		if dsn, err = parseMycnf(*configMycnf); err != nil {
+			level.Info(logger).Log("msg", "Error parsing my.cnf", "file", *configMycnf, "err", err)
+			return false
+		}
+	}
+	return true
+}
+
+
+func scrape(w http.ResponseWriter, r *http.Request) string{
+	target := r.URL.Query().Get("target")
+	if target == "" {
+		http.Error(w, "'target' parameter must be specified", http.StatusBadRequest)
+		return ""
+	}
+	targetslice:=strings.Split(target,"//")
+	target=fmt.Sprintf("exporter:123123@(%s)/",targetslice[1])
+	//w.Write([]byte(target))
+	return target
+}
+
 
 func main() {
 	// Generate ON/OFF flags for all scrapers.
@@ -266,14 +303,7 @@ func main() {
 	level.Info(logger).Log("msg", "Starting msqyld_exporter", "version", version.Info())
 	level.Info(logger).Log("msg", "Build context", version.BuildContext())
 
-	dsn = os.Getenv("DATA_SOURCE_NAME")
-	if len(dsn) == 0 {
-		var err error
-		if dsn, err = parseMycnf(*configMycnf); err != nil {
-			level.Info(logger).Log("msg", "Error parsing my.cnf", "file", *configMycnf, "err", err)
-			os.Exit(1)
-		}
-	}
+
 
 	// Register only scrapers enabled by flag.
 	enabledScrapers := []collector.Scraper{}
@@ -283,11 +313,28 @@ func main() {
 			enabledScrapers = append(enabledScrapers, scraper)
 		}
 	}
-	handlerFunc := newHandler(collector.NewMetrics(), enabledScrapers, logger)
+
+	if tag:=getdns(logger);tag{
+		handlerFunc = newHandler(collector.NewMetrics(), enabledScrapers, logger,true)
+	}else{
+		handlerFunc = newHandler(collector.NewMetrics(), enabledScrapers, logger,false)
+	}
+
 	http.Handle(*metricPath, promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, handlerFunc))
+
+
+	http.HandleFunc("/scrape", func(w http.ResponseWriter, r *http.Request) {
+		dsn=scrape(w,r)
+		handlerFunc := newHandler(collector.NewMetrics(), enabledScrapers, logger,true)
+		handlerFunc2 :=promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer,handlerFunc)
+		handlerFunc2.ServeHTTP(w,r)
+		level.Info(logger).Log("dsn",dsn)
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write(landingPage)
 	})
+
 
 	level.Info(logger).Log("msg", "Listening on address", "address", *listenAddress)
 	if err := http.ListenAndServe(*listenAddress, nil); err != nil {
@@ -295,3 +342,6 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+
+
