@@ -87,30 +87,34 @@ type ProxyExporter struct {
 	ctx      context.Context
 	logger   log.Logger
 	metrics  Metrics
+	health  prometheus.Gauge
 }
 
 // Describe implements prometheus.Collector.
 func (e *ProxyExporter) Describe(ch chan<- *prometheus.Desc) {
-	ch <- e.metrics.TotalScrapes.Desc()
-	ch <- e.metrics.Error.Desc()
-	e.metrics.ScrapeErrors.Describe(ch)
-	ch <- e.metrics.MySQLUp.Desc()
+	ch <- e.health.Desc()
 }
 
 // Collect implements prometheus.Collector.
 func (e *ProxyExporter) Collect(ch chan<- prometheus.Metric) {
-	ch <- e.metrics.TotalScrapes
-	ch <- e.metrics.Error
-	e.metrics.ScrapeErrors.Collect(ch)
-	ch <- e.metrics.MySQLUp
+	e.healthcheck(ch)
+	ch <- e.health
 }
 
 
+func(e *ProxyExporter)healthcheck(ch chan<-prometheus.Metric){
+	e.health.Set(1)
+}
+
 func NewProxy(ctx context.Context,metrics Metrics, logger log.Logger) *ProxyExporter {
+	health:=prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "mysql_exporter",
+		Name:      "up",
+		Help:      "Whether the my_exporter server is up.",
+	})
+
 	return &ProxyExporter{
-		ctx:      ctx,
-		logger:   logger,
-		metrics:  metrics,
+		health: health,
 	}
 }
 

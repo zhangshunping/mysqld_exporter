@@ -101,6 +101,7 @@ var scrapers = map[collector.Scraper]bool{
 	collector.ScrapeHeartbeat{}:                           false,
 	collector.ScrapeSlaveHosts{}:                          false,
 	collector.ScrapeReplicaHost{}:                         false,
+	collector.MeminfoCollector{}:						   false,
 }
 
 func parseMycnf(config interface{}) (string, error) {
@@ -251,7 +252,7 @@ func getdns(logger log.Logger ) bool {
 }
 
 
-func scrape(w http.ResponseWriter, r *http.Request) string{
+func scrapefunc(w http.ResponseWriter, r *http.Request) string{
 	target := r.URL.Query().Get("target")
 	if target == "" {
 		http.Error(w, "'target' parameter must be specified", http.StatusBadRequest)
@@ -323,8 +324,12 @@ func main() {
 	http.Handle(*metricPath, promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, handlerFunc))
 
 
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		handlerFunc.ServeHTTP(w,r)
+	})
+
 	http.HandleFunc("/scrape", func(w http.ResponseWriter, r *http.Request) {
-		dsn=scrape(w,r)
+		dsn=scrapefunc(w,r)
 		handlerFunc := newHandler(collector.NewMetrics(), enabledScrapers, logger,true)
 		handlerFunc2 :=promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer,handlerFunc)
 		handlerFunc2.ServeHTTP(w,r)

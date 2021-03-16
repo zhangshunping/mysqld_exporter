@@ -1,4 +1,4 @@
-export DATA_SOURCE_NAME='exporter:123123@(zsp.vmware.com:3306)/'
+#export DATA_SOURCE_NAME='exporter:123123@(zsp.vmware.com:3306)/'
 ./mysql_exporter --collect.info_schema.tables \
  --collect.info_schema.innodb_tablespaces \
  --collect.info_schema.innodb_metrics  \
@@ -25,4 +25,6 @@ export DATA_SOURCE_NAME='exporter:123123@(zsp.vmware.com:3306)/'
  --collect.info_schema.innodb_cmp \
  --collect.info_schema.innodb_cmpmem \
  --collect.info_schema.query_response_time \
- --collect.engine_innodb_status   
+ --collect.engine_innodb_status   \
+ --collect.node_exporter_meminfo 
+
