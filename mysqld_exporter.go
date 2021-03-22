@@ -61,6 +61,14 @@ var (
 		"tls.insecure-skip-verify",
 		"Ignore certificate and server verification when using a tls connection.",
 	).Bool()
+	dbusername=kingpin.Flag(
+		"dbusername",
+		"mysql's username for mysql_exporter to collect metrics from mysql",
+		).Default("exporter").String()
+	dbpasswd=kingpin.Flag(
+		"dbpasswd",
+		"mysql's passwd for mysql_exporter to collect metrics from mysql",
+	).Default("123123").String()
 	dsn string
 	handlerFunc http.HandlerFunc
 )
@@ -252,14 +260,14 @@ func getdns(logger log.Logger ) bool {
 }
 
 
-func scrapefunc(w http.ResponseWriter, r *http.Request) string{
+func scrapefunc(dbusername string,dbpasswd string,w http.ResponseWriter, r *http.Request) string{
 	target := r.URL.Query().Get("target")
 	if target == "" {
 		http.Error(w, "'target' parameter must be specified", http.StatusBadRequest)
 		return ""
 	}
 	targetslice:=strings.Split(target,"//")
-	target=fmt.Sprintf("exporter:123123@(%s)/",targetslice[1])
+	target=fmt.Sprintf("%s:%s@(%s)/",dbusername,dbpasswd,targetslice[1])
 	//w.Write([]byte(target))
 	return target
 }
@@ -305,7 +313,6 @@ func main() {
 	level.Info(logger).Log("msg", "Build context", version.BuildContext())
 
 
-
 	// Register only scrapers enabled by flag.
 	enabledScrapers := []collector.Scraper{}
 	for scraper, enabled := range scraperFlags {
@@ -329,11 +336,11 @@ func main() {
 	})
 
 	http.HandleFunc("/scrape", func(w http.ResponseWriter, r *http.Request) {
-		dsn=scrapefunc(w,r)
+		dsn=scrapefunc(*dbusername,*dbpasswd,w,r)
 		handlerFunc := newHandler(collector.NewMetrics(), enabledScrapers, logger,true)
 		handlerFunc2 :=promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer,handlerFunc)
 		handlerFunc2.ServeHTTP(w,r)
-		level.Info(logger).Log("dsn",dsn)
+		level.Debug(logger).Log("dsn",dsn)
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
